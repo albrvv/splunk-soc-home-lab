@@ -1,86 +1,147 @@
-\# Investigation: Credential Manager Access
+# Investigation: Credential Manager Access
 
+## Objective
 
+Investigate Windows Credential Manager access events and determine whether the activity was expected or suspicious.
 
-\## Objective
+## Initial Detection
 
+Windows Security Event ID **5379** was observed at a high frequency.
 
+**Event 5379:** Credential Manager credentials were read.
 
-Investigate Windows Credential Manager access events and determine whether the activity is expected.
-
-
-
-\## Windows Event ID
-
-
-
-\- \*\*5379\*\*: Credential Manager credentials were read.
-
-
-
-\## Splunk Search
-
-
+Initial Splunk search:
 
 ```spl
-
-index=main EventCode=5379
-
-| table \_time Account\_Name ComputerName Process\_Name
-
-| sort - \_time
-
+index=main sourcetype="WinEventLog:Security" EventCode=5379
+| rex "Account Name:\s+(?<account>\S+)"
+| rex "Read Operation:\s+(?<operation>[^\r\n]+)"
+| stats count by account, operation
+| sort - count
 ```
 
+## Observed Activity
 
+The search produced:
 
-\## Investigation Steps
+| Account | Operation | Count |
+|---|---|---|
+| albra | Enumerate Credentials | 3,209 |
+| ALBRAA$ | Enumerate Credentials | 50 |
+| albra | Read Credential | 49 |
+| LOCAL | Enumerate Credentials | 10 |
 
+The high volume of Event 5379 activity required further investigation.
 
+## Investigation
 
-1\. Identify the account associated with the event.
+### 1. Correlate the Logon ID
 
-2\. Review the timestamp.
+A sample Event 5379 was identified with:
 
-3\. Identify the process responsible for the activity.
+- **Account Name:** albra
+- **Read Operation:** Enumerate Credentials
+- **Logon ID:** 0x58F0574
 
-4\. Check whether the activity occurred during normal user activity.
+The same Logon ID was searched across Security events.
 
-5\. Review related authentication events.
+This identified a related Event 4624:
 
-6\. Look for unusual or repeated credential access.
+- **Logon Type:** 11
+- **New Logon Account:** albraa.haitham117@hotmail.com
+- **Account Domain:** MicrosoftAccount
+- **Logon ID:** 0x58F0574
+- **Process Name:** C:\Windows\System32\svchost.exe
+- **Source Address:** 127.0.0.1
 
+### 2. Correlate Cryptographic Events
 
+Additional events around the same activity were identified.
 
-\## Related Events
+**Event 5058**
 
+- **Process ID:** 18336
+- **Key Name:** Microsoft Connected Devices Platform device certificate
+- **Operation:** Read persisted key from file
+- Key path was under the user's Microsoft Crypto keys directory.
 
+**Event 5061**
 
-Useful events for additional context include:
+- **Process:** Microsoft Software Key Storage Provider
+- **Algorithm:** ECDSA_P256
+- **Key Name:** Microsoft Connected Devices Platform device certificate
+- **Operation:** Open Key
 
+**Event 5059**
 
+- **Process ID:** 18336
+- Same Connected Devices Platform certificate
+- **Operation:** Export of persistent cryptographic key
 
-\- 4624: Successful logon
+### 3. Identify the Process
 
-\- 4648: Logon using explicit credentials
+A process lookup was performed for PID 18336.
 
-\- 4672: Special privileges assigned to new logon
+PowerShell identified the process as:
 
-\- 4688: A new process has been created
+```text
+svchost
+PID 18336
+```
 
+The Windows service associated with this process was then identified using:
 
+```powershell
+Get-CimInstance Win32_Service |
+Where-Object {$_.ProcessId -eq 18336} |
+Select-Object Name, DisplayName, State, StartMode
+```
 
-\## Investigation Result
+The result was:
 
+```text
+Name         : CDPUserSvc_58febd8
+DisplayName  : Connected Devices Platform User Service_58febd8
+State        : Running
+StartMode    : Auto
+```
 
+## Investigation Conclusion
 
-Credential Manager access is not automatically malicious. The event should be correlated with the user, process, time, and other security events to determine whether the activity is expected.
+The high volume of Event 5379 activity was investigated and correlated with related authentication and cryptographic events.
 
+The activity was associated with:
 
+```text
+svchost.exe
+    |
+    └── CDPUserSvc_58febd8
+        Connected Devices Platform User Service
+```
 
-\## Status
+The related events involved a Microsoft Connected Devices Platform certificate.
 
+Based on the evidence collected in this lab, the activity appeared consistent with legitimate Windows activity. No evidence from this investigation alone was sufficient to conclude that the system was compromised.
 
+## Important Note
 
-Investigation documented. Further analysis can be performed using collected lab data.
+Event 5379 by itself is not proof of malicious credential access.
 
+A SOC analyst should correlate:
+
+- Account
+- Logon ID
+- Process
+- Process ID
+- Related authentication events
+- Cryptographic events
+- Timing
+- Expected Windows services
+
+before determining whether the activity is suspicious.
+
+## Status
+
+Investigated and documented.
+
+The investigation demonstrated correlation of multiple Windows Security Event IDs and identification of the Windows service associated with the observed Credential Manager activity.
