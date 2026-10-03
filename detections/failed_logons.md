@@ -1,86 +1,79 @@
-\# Detection: Multiple Failed Logons
+# Detection: Multiple Failed Windows Logins
 
+## Description
 
+Detects multiple failed Windows login attempts for the same account and source IP within a 5-minute window.
 
-\## Objective
+This detection can help identify repeated authentication failures that may require investigation.
 
+## Windows Event ID
 
+**Event ID:** 4625  
+**Event Name:** An account failed to log on
 
-Detect repeated failed Windows logon attempts that may indicate password guessing or brute-force activity.
-
-
-
-\## Windows Event ID
-
-
-
-\- \*\*4625\*\*: An account failed to log on.
-
-
-
-\## Splunk Search
-
-
+## SPL Query
 
 ```spl
-
-index=main EventCode=4625
-
-| stats count by Account\_Name, Source\_Network\_Address
-
-| where count >= 5
-
-| sort - count
-
+index=main sourcetype="WinEventLog:Security" EventCode=4625
+| bin _time span=5m
+| stats count as failed_logins by _time, Account_Name, Source_Network_Address
+| where failed_logins >= 3
+| sort - failed_logins
 ```
 
+## Detection Logic
 
+The search:
 
-\## Detection Logic
+- Searches Windows Security logs.
+- Filters for Event ID 4625.
+- Groups events into 5-minute time windows.
+- Groups failed logins by account and source IP.
+- Detects when there are 3 or more failed attempts.
+- Sorts the results by the number of failed attempts.
 
+## Lab Results
 
+During testing, the detection identified multiple failed login attempts from:
 
-The search counts failed logon events by username and source network address.
+**Source IP:** 192.168.1.24
 
+The activity included attempts involving the disabled Guest account.
 
+A total of 4 failed login events were observed within the 5-minute window.
 
-If an account has 5 or more failed logon attempts from the same source, the activity can be investigated for possible password guessing.
+## Investigation
 
+The failed login events were reviewed using additional Windows Security event fields.
 
+The events showed:
 
-\## Investigation
+- **Logon Type:** 3
+- **Source Network Address:** 192.168.1.24
+- **Failure Reason:** Account currently disabled
+- **Authentication Package:** NTLM
 
+The source IP belonged to the Windows endpoint used in the lab.
 
+Based on the available evidence, the activity appeared consistent with local lab activity involving the disabled Guest account.
 
-When the detection triggers, investigate:
+## Why This Detection Matters
 
+Repeated failed authentication attempts can be relevant to security monitoring because they may indicate:
 
+- Brute-force attempts
+- Repeated incorrect credentials
+- Misconfigured services
+- Unauthorized authentication attempts
 
-\- Username targeted
+Additional investigation is required to determine whether the activity is legitimate or suspicious.
 
-\- Source IP address
+## Limitations
 
-\- Number of failed attempts
+A threshold of 3 failed logins was selected because the initial 5-attempt threshold did not produce results in the available lab data.
 
-\- Time of the attempts
+The threshold may be adjusted depending on the environment and normal authentication behavior.
 
-\- Whether successful logons occurred afterward
+## Status
 
-\- Whether the source IP belongs to a known device
-
-
-
-\## Severity
-
-
-
-Medium
-
-
-
-\## Status
-
-
-
-Detection documented. Testing and tuning required.
-
+Tested and documented
