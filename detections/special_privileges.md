@@ -2,9 +2,9 @@
 
 ## Description
 
-Detects Windows Event ID 4672 for the monitored user account.
+Detects Windows Event ID 4672 and summarizes the accounts that received special privileges.
 
-Event ID 4672 is generated when special privileges are assigned to a new logon. These privileges can provide elevated capabilities and may require investigation when unexpected.
+Event ID 4672 is generated when special privileges are assigned to a new logon. The event can provide useful context for monitoring privileged activity and investigating unexpected privileged logons.
 
 ## Windows Event ID
 
@@ -15,8 +15,8 @@ Event ID 4672 is generated when special privileges are assigned to a new logon. 
 
 ```spl
 index=main sourcetype="WinEventLog:Security" EventCode=4672
-| search Account_Name="albraa.haitham117@hotmail.com"
 | stats count by Account_Name
+| sort - count
 ```
 
 ## Detection Logic
@@ -25,43 +25,60 @@ The search:
 
 - Searches Windows Security logs.
 - Filters for Event ID 4672.
-- Monitors the specific lab user account.
-- Counts the number of matching events.
+- Groups events by account.
+- Counts the number of Event 4672 events for each account.
+- Sorts the accounts by event count.
+
+This is a generic monitoring search rather than an account-specific detection.
 
 ## Lab Results
 
-During testing, the monitored account:
+During testing, the search returned **1,233** Event ID 4672 events for the selected period:
 
-**Account:** albraa.haitham117@hotmail.com
+**September 3, 2026 to October 3, 2026**
 
-generated 10 Event ID 4672 events.
+| Account | Event Count |
+|---|---:|
+| SYSTEM | 1,151 |
+| albraa.haitham117@hotmail.com | 46 |
+| DWM-1 | 10 |
+| SplunkForwarder | 6 |
+| LOCAL SERVICE | 5 |
+| NETWORK SERVICE | 5 |
+| DWM-2 | 4 |
+| DWM-3 | 4 |
+| DWM-4 | 2 |
 
 ## Investigation
 
 Event ID 4672 does not automatically indicate malicious activity.
 
-Special privileges can be assigned during legitimate administrative or system activity.
+Special privileges can be assigned during legitimate administrative or system activity. High-volume activity from accounts such as SYSTEM or Windows service accounts should therefore be interpreted in context.
 
-The events were therefore treated as monitoring and investigation points rather than confirmed security incidents.
+The results can be used as a starting point for further investigation by reviewing:
+
+- Account
+- Logon ID
+- Logon type
+- Source address
+- Process information
+- Related authentication events
+- Timing and frequency
+- Expected system or service activity
 
 ## Why This Detection Matters
 
-Special privileges can provide access to sensitive system operations.
+Unexpected privileged logons can be relevant to SOC monitoring because attackers may attempt to obtain or use accounts with elevated privileges.
 
-Monitoring Event ID 4672 can help identify unexpected privileged logons and provide additional context during investigations.
-
-This event can be particularly useful when correlated with other Windows Security events such as:
-
-- Event ID 4624: Successful logon
-- Event ID 4625: Failed logon
-- Event ID 4648: Explicit credentials used
-- Event ID 4738: User account changed
+Monitoring Event ID 4672 provides visibility into privileged logon activity and can help analysts identify events that require additional investigation.
 
 ## Limitations
 
-The detection monitors a specific account in this lab environment.
+Event ID 4672 alone does not establish that an account or activity is malicious.
 
-In a production environment, the detection could be expanded to monitor privileged accounts or investigate unusual privilege assignments based on baseline behavior.
+The search currently summarizes all observed accounts rather than applying a fixed privileged-account allowlist or baseline.
+
+In a production environment, the results could be enhanced with account baselines, known service accounts, logon context, and correlation with other Windows Security events.
 
 ## Status
 
